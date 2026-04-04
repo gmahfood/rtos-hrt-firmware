@@ -59,46 +59,35 @@ This is the second project in the [Baremetal Labs](https://github.com/gmahfood) 
 
 ## FreeRTOS architecture
 
+Four tasks run concurrently under the FreeRTOS scheduler, communicating exclusively through queues and binary semaphores — no direct shared state except the volatile FSM.
+
+### Data flow
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   FreeRTOS Scheduler                    │
-│                                                         │
-│  vStimulusTask (P2)        vInputTask (P3)             │
-│  ┌──────────────┐          ┌──────────────┐            │
-│  │ Random delay │          │ ISR semaphore│            │
-│  │ LED stimulus │          │ Debounce     │            │
-│  │ Post event ──┼──────────┼→ xReaction  │            │
-│  └──────────────┘          │   Queue      │            │
-│                             └──────┬───────┘            │
-│                                    │                    │
-│                             xDisplayQueue               │
-│                                    │                    │
-│  vScoringTask (P2)         vDisplayTask (P1)           │
-│  ┌──────────────┐          ┌──────────────┐            │
-│  │ EEPROM HS    │          │ LCD 1602     │            │
-│  │ Compare      │          │ 7-segment    │            │
-│  │ Buzzer tones │          │ State msgs   │            │
-│  └──────────────┘          └──────────────┘            │
-└─────────────────────────────────────────────────────────┘
+vStimulusTask ──[ xReactionQueue ]──► vInputTask
+                                           │
+                                   [ xDisplayQueue ]
+                                      │           │
+                               vScoringTask   vDisplayTask
 ```
 
 ### Task summary
 
 | Task | Priority | Stack | Responsibility |
 |------|----------|-------|----------------|
-| `vStimulusTask` | 2 | 192B | Random delay, RGB LED stimulus, queue post |
-| `vInputTask` | 3 | 128B | ISR semaphore, debounce, timestamp capture |
-| `vScoringTask` | 2 | 192B | Reaction delta, EEPROM high score, buzzer |
-| `vDisplayTask` | 1 | 256B | LCD 1602, 7-segment, state rendering |
+| `vStimulusTask` | 2 | 192B | Random delay, RGB LED stimulus, post timestamp to queue |
+| `vInputTask` | 3 | 128B | ISR semaphore, debounce, capture response timestamp |
+| `vScoringTask` | 2 | 192B | Compute reaction delta, EEPROM high score, buzzer tones |
+| `vDisplayTask` | 1 | 256B | Drive LCD 1602 and 7-segment from display queue |
 
 ### Inter-task communication
 
-| Primitive | Between | Purpose |
-|-----------|---------|---------|
-| `xReactionQueue` | Stimulus → Input | Carries stimulus timestamp |
-| `xDisplayQueue` | Input → Display / Scoring | Carries completed reaction event |
-| `xButtonSemaphore` | ISR → Input task | Signals button press |
-| `gGameState` | All tasks | Shared FSM state (volatile) |
+| Primitive | Type | Between | Purpose |
+|-----------|------|---------|---------|
+| `xReactionQueue` | Queue | Stimulus → Input | Carries stimulus timestamp |
+| `xDisplayQueue` | Queue | Input → Scoring / Display | Carries completed `ReactionEvent_t` |
+| `xButtonSemaphore` | Binary semaphore | ISR → Input task | Signals button press with zero latency |
+| `gGameState` | Volatile enum | All tasks | Shared FSM state (`IDLE`, `WAITING`, `STIMULUS`, `RESULT`, `EARLY`, `HIGHSCORE`) |
 
 ---
 
@@ -186,8 +175,9 @@ STL files and print profiles will be added to `/enclosure` upon completion of Ph
 ## Roadmap
 
 ### Phase 1 — breadboard prototype
-- [ ] Repository initialized and pushed
-- [ ] PlatformIO project configured
+
+- [x] Repository initialized and pushed
+- [x] PlatformIO project configured
 - [ ] `pin_config.h` — pin assignments and timing constants
 - [ ] `shared_types.h` — FreeRTOS handles, FSM states, event struct
 - [ ] `main.cpp` — scheduler init, ISR, task creation
@@ -200,6 +190,7 @@ STL files and print profiles will be added to `/enclosure` upon completion of Ph
 - [ ] Reaction timing accuracy validated
 
 ### Phase 2 — FreeRTOS refinement
+
 - [ ] Queue / semaphore communication verified end-to-end
 - [ ] False start detection tested
 - [ ] EEPROM persistence confirmed across power cycles
@@ -208,6 +199,7 @@ STL files and print profiles will be added to `/enclosure` upon completion of Ph
 - [ ] Full integration test — all tasks running concurrently
 
 ### Phase 3 — PCB design and fabrication
+
 - [ ] Schematic complete in EasyEDA
 - [ ] PCB layout routed with ground pour
 - [ ] DRC passed (0 errors)
@@ -216,12 +208,14 @@ STL files and print profiles will be added to `/enclosure` upon completion of Ph
 - [ ] Board received, soldered, and validated
 
 ### Phase 4 — 3D printed enclosure
+
 - [ ] Enclosure modeled in OpenSCAD / CadQuery
 - [ ] Test print on Bambu Labs P2S
 - [ ] Final print with PCB fit confirmed
 - [ ] STLs uploaded to `/enclosure`
 
 ### Phase 5 — content and documentation
+
 - [ ] Wiring diagram added to `/docs`
 - [ ] Demo GIF recorded and added to README
 - [ ] YouTube build video published
