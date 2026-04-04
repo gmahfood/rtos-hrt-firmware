@@ -1,0 +1,23 @@
+# PlatformIO build artifacts — never commit these
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Compiled output
+*.o
+*.d
+*.elf
+*.hex
+*.map
+
+# IDE
+.vscode/
+*.code-workspace
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# EasyEDA backups (Gerbers committed intentionally under /hardware)
+*.bak
