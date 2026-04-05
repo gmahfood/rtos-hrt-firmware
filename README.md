@@ -76,6 +76,8 @@ This is the second project in the [Baremetal Labs](https://github.com/gmahfood) 
 
 Four tasks run concurrently under the FreeRTOS scheduler, communicating exclusively through queues and binary semaphores — no direct shared state except the volatile FSM.
 
+![Architecture diagram](assets/architecture.svg)
+
 ### Data flow
 
 ```
