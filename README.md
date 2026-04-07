@@ -222,7 +222,7 @@ STL files and print profiles will be added to `/enclosure` upon completion of Ph
 - [ ] `task_input.cpp` — EXTI semaphore, debounce, timestamp capture
 - [ ] `task_scoring.cpp` — flash high score, buzzer tones
 - [ ] `task_display.cpp` — LCD 1602 state rendering
-- [ ] ST-Link wired and board flashing confirmed
+- [x] ST-Link wired and board flashing confirmed
 - [ ] Breadboard wiring complete
 - [ ] Serial monitor output verified
 - [ ] Reaction timing accuracy validated
