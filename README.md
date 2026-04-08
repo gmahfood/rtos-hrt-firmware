@@ -76,7 +76,7 @@ This is the second project in the [Baremetal Labs](https://github.com/gmahfood) 
 
 Four tasks run concurrently under the FreeRTOS scheduler, communicating exclusively through queues and binary semaphores — no direct shared state except the volatile FSM.
 
-![Architecture diagram](assets/architecture.svg)
+![Architecture](assets/architecture.svg)
 
 ### Data flow
 
@@ -92,10 +92,10 @@ vStimulusTask ──[ xReactionQueue ]──► vInputTask
 
 | Task | Priority | Stack | Responsibility |
 |------|----------|-------|----------------|
-| `vStimulusTask` | 2 | 256B | Random delay, RGB LED stimulus, post timestamp to queue |
-| `vInputTask` | 3 | 256B | EXTI semaphore, debounce, capture response timestamp |
-| `vScoringTask` | 2 | 256B | Compute reaction delta, flash high score, buzzer tones |
-| `vDisplayTask` | 1 | 512B | Drive LCD 1602 / ILI9488 TFT from display queue |
+| `vStimulusTask` | 2 | 256 words | Random delay, RGB LED stimulus, post timestamp to queue |
+| `vInputTask` | 3 | 256 words | EXTI semaphore, debounce, capture response timestamp |
+| `vScoringTask` | 2 | 256 words | Compute reaction delta, RAM high score, buzzer tones |
+| `vDisplayTask` | 1 | 512 words | Drive LCD 1602 / ILI9488 TFT from display queue |
 
 ### Inter-task communication
 
@@ -109,8 +109,6 @@ vStimulusTask ──[ xReactionQueue ]──► vInputTask
 ---
 
 ## Pin configuration
-
-> ⚠️ Pin assignments are being finalized as hardware arrives. Full `pin_config.h` will be updated once wiring is confirmed on the bench.
 
 | Pin | Direction | Function |
 |-----|-----------|----------|
@@ -132,8 +130,6 @@ vStimulusTask ──[ xReactionQueue ]──► vInputTask
 ---
 
 ## Getting started
-
-> ⚠️ Source files are being added incrementally as the project is built. Check the roadmap below for current status.
 
 ### Prerequisites
 
@@ -189,8 +185,6 @@ Custom 2-layer integration PCB designed in EasyEDA and fabricated by [PCBWay](ht
 | Copper weight | 1oz |
 | Soldermask | Green |
 
-Gerber files and EasyEDA source will be added to `/hardware` upon completion of Phase 3.
-
 ---
 
 ## 3D enclosure
@@ -205,8 +199,6 @@ Parametric enclosure designed in OpenSCAD / CadQuery and printed on Bambu Labs P
 | Material | PETG |
 | Design tool | OpenSCAD / CadQuery |
 
-STL files and print profiles will be added to `/enclosure` upon completion of Phase 4.
-
 ---
 
 ## Roadmap
@@ -217,12 +209,12 @@ STL files and print profiles will be added to `/enclosure` upon completion of Ph
 - [x] PlatformIO project configured for STM32F411
 - [x] `pin_config.h` — STM32 GPIO assignments and timing constants
 - [x] `shared_types.h` — FreeRTOS handles, FSM states, event struct
-- [ ] `main.cpp` — scheduler init, NVIC ISR, task creation
-- [ ] `task_stimulus.cpp` — random delay, LED fire, queue post
-- [ ] `task_input.cpp` — EXTI semaphore, debounce, timestamp capture
-- [ ] `task_scoring.cpp` — flash high score, buzzer tones
-- [ ] `task_display.cpp` — LCD 1602 state rendering
+- [x] `main.cpp` — scheduler init, NVIC ISR, task creation
+- [x] `task_stimulus.cpp` — random delay, LED fire, queue post
+- [x] `task_input.cpp` — EXTI semaphore, debounce, timestamp capture
+- [x] `task_scoring.cpp` — RAM high score, buzzer tones
 - [x] ST-Link wired and board flashing confirmed
+- [ ] `task_display.cpp` — LCD 1602 state rendering
 - [ ] Breadboard wiring complete
 - [ ] Serial monitor output verified
 - [ ] Reaction timing accuracy validated
