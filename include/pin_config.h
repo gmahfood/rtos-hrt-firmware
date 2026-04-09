@@ -6,7 +6,34 @@
  * No other file should hardcode pin numbers — always reference these macros.
  * If the wiring changes, this is the only file that needs to be updated.
  *
- * Target board: Arduino Uno R3 (ATmega328P)
+ * Target board: STM32F411 Black Pill (WeAct Studio v3.1)
+ * Core:         ARM Cortex-M4 @ 100MHz
+ * Framework:    Arduino (STM32duino) + FreeRTOS
+ *
+ * Board pin layout reference (ST-Link header facing up):
+ *
+ *   LEFT SIDE (top to bottom)        RIGHT SIDE (bottom to top)
+ *   ─────────────────────────        ─────────────────────────
+ *   5V                               3V3
+ *   G                                G
+ *   3V3                              5V
+ *   B10                              B9
+ *   B2                               B8   ← Buzzer
+ *   B1   ← Start button              B7   ← I2C1 SDA (LCD)
+ *   B0   ← React button (EXTI)       B6   ← I2C1 SCL (LCD)
+ *   A7   ← SPI1 MOSI (TFT Ph2)       B5   ← RGB green (TIM3 CH2)
+ *   A6   ← SPI1 MISO (TFT Ph2)       B4   ← RGB red (TIM3 CH1)
+ *   A5   ← SPI1 SCK  (TFT Ph2)       B3
+ *   A4   ← SPI1 CS   (TFT Ph2)       A15
+ *   A3                               A12
+ *   A2                               A11
+ *   A1                               A10
+ *   A0   ← Potentiometer (ADC)       A9
+ *   R    (NRST — do not use)         A8   ← RGB blue (TIM1 CH1)
+ *   C15                              B15
+ *   C14                              B14
+ *   C13  (onboard LED)               B13
+ *   VB   (VBAT)                      B12
  *
  * Author : George Mahfood | Baremetal Labs
  */
@@ -15,49 +42,79 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RGB LED (common cathode)
-// PWM-capable pins required — D3, D5, D6 on the Uno are Timer-driven PWM
+//
+// All three pins must support hardware PWM for smooth color mixing.
+// STM32 timers drive PWM — each pin is tied to a specific timer channel.
+//
+// PB4 → TIM3 Channel 1 (red)
+// PB5 → TIM3 Channel 2 (green)
+// PA8 → TIM1 Channel 1 (blue)
+//
+// PA8 is on a different timer than red/green. This is fine — analogWrite()
+// handles each channel independently. We use PA8 because PB6 (the next
+// TIM4 PWM candidate) is already taken by I2C1 SCL.
 // ─────────────────────────────────────────────────────────────────────────────
-#define PIN_LED_R   6   // Timer0 — PWM red channel
-#define PIN_LED_G   5   // Timer0 — PWM green channel
-#define PIN_LED_B   3   // Timer2 — PWM blue channel
+#define PIN_LED_R   PB4     // Board label: B4  — right side, 8th from bottom
+#define PIN_LED_G   PB5     // Board label: B5  — right side, 7th from bottom
+#define PIN_LED_B   PA8     // Board label: A8  — right side, 13th from bottom
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Push buttons (active LOW — INPUT_PULLUP, pressed = GND)
 //
-// D2 is used for the reaction button because it is the only pin on the Uno
-// that supports INT0 (hardware interrupt 0). This gives us zero-latency
-// response capture via ISR rather than polling — critical for accuracy.
+// React button uses EXTI (External Interrupt) for zero-latency capture.
+// On the STM32F411, every GPIO can trigger EXTI, but PB0 maps to EXTI line 0
+// which has its own dedicated IRQ handler (EXTI0_IRQn) — no shared vectors.
+// This gives us a clean ISR → semaphore → task path for reaction timing.
+//
+// Start button is polled with software debounce. Latency doesn't matter
+// here — we're just transitioning from IDLE to WAITING.
 // ─────────────────────────────────────────────────────────────────────────────
-#define PIN_BTN_REACT   2   // INT0 — hardware interrupt, reaction button
-#define PIN_BTN_START   4   // Polled — start game
-#define PIN_BTN_RESET   7   // Polled — return to idle from any state
+#define PIN_BTN_REACT   PB0 // Board label: B0  — left side, 7th from top
+#define PIN_BTN_START   PB1 // Board label: B1  — left side, 6th from top
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Piezo buzzer (passive — driven with tone())
+//
+// PB8 is a general-purpose digital output with no peripheral conflicts.
+// tone() generates a software-driven square wave at the requested frequency.
 // ─────────────────────────────────────────────────────────────────────────────
-#define PIN_BUZZER  8
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 7-segment display — MAX7219 SPI interface
-// D11/D12/D13 are the Uno's hardware SPI bus, but MAX7219 works fine
-// on any digital pins using software SPI via the LedControl library.
-// We use D10-D12 to keep D13 free (it has an onboard LED that can interfere).
-// ─────────────────────────────────────────────────────────────────────────────
-#define PIN_SEG_DIN 11  // MAX7219 data in
-#define PIN_SEG_CLK 12  // MAX7219 clock
-#define PIN_SEG_CS  10  // MAX7219 chip select (active LOW)
+#define PIN_BUZZER  PB8     // Board label: B8  — right side, 4th from bottom
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Potentiometer — analog difficulty control
-// Maps 0–1023 ADC reading to DELAY_MIN_MS–DELAY_MAX_MS stimulus range
+//
+// PA0 is ADC1 channel 0 on the STM32F411. analogRead() returns 0–4095
+// (12-bit ADC) compared to the Uno's 0–1023 (10-bit). The stimulus task
+// maps this range to DELAY_MIN_MS–DELAY_MAX_MS.
+//
+// NOTE: STM32 ADC is 12-bit (0–4095), not 10-bit like the ATmega328P.
+//       Update any map() calls to use 4095 as the input maximum.
 // ─────────────────────────────────────────────────────────────────────────────
-#define PIN_POT     A0
+#define PIN_POT     PA0     // Board label: A0  — left side, 15th from top
 
 // ─────────────────────────────────────────────────────────────────────────────
-// I2C — LCD 1602
-// Fixed hardware pins on the ATmega328P — cannot be reassigned
+// I2C1 — LCD 1602 (Phase 1 display)
+//
+// PB7 and PB6 are the default I2C1 SDA/SCL pins on the STM32F411.
+// The Wire library uses these automatically — no remapping needed.
+// These are documented here for wiring reference, not used as macros.
+//
+// PB7 → I2C1 SDA   Board label: B7  — right side, 5th from bottom
+// PB6 → I2C1 SCL   Board label: B6  — right side, 6th from bottom
 // ─────────────────────────────────────────────────────────────────────────────
-// SDA → A4  |  SCL → A5  (defined by hardware, not configurable)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPI1 — ILI9488 3.5" TFT display (Phase 2 upgrade, not wired yet)
+//
+// PA5/PA6/PA7 are the default SPI1 pins on the STM32F411.
+// PA4 is used as chip select (directly adjacent on the board).
+// These are documented here for future wiring — not used in Phase 1 code.
+//
+// PA4 → SPI1 CS    Board label: A4  — left side, 11th from top
+// PA5 → SPI1 SCK   Board label: A5  — left side, 10th from top
+// PA6 → SPI1 MISO  Board label: A6  — left side, 9th from top
+// PA7 → SPI1 MOSI  Board label: A7  — left side, 8th from top
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Timing constants
@@ -72,8 +129,12 @@
 //
 // DISPLAY_HOLD_MS — how long the result stays on screen before returning
 // to idle. 2 seconds is comfortable for reading a 3-4 digit number.
+//
+// ADC_MAX — STM32F411 has a 12-bit ADC (0–4095). Used in map() calls
+// for potentiometer scaling. The Uno used 1023 (10-bit).
 // ─────────────────────────────────────────────────────────────────────────────
 #define DELAY_MIN_MS    500
 #define DELAY_MAX_MS    3000
 #define DEBOUNCE_MS     50
 #define DISPLAY_HOLD_MS 2000
+#define ADC_MAX         4095
