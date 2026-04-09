@@ -6,7 +6,7 @@
 [![PCBWay](https://img.shields.io/badge/PCB-PCBWay-brightgreen)](https://www.pcbway.com/)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-> A multi-task human reaction timer built on the STM32F411 Black Pill with FreeRTOS. Four concurrent tasks communicate via queues and binary semaphores to deliver microsecond-accurate reaction timing, flash high-score persistence, RGB LED stimulus output, piezo audio feedback, and LCD 1602 display output — with a 3.5" ILI9488 TFT upgrade planned for Phase 2.
+> A multi-task human reaction timer built on the STM32F411 Black Pill with FreeRTOS. Three concurrent tasks communicate via queues to deliver microsecond-accurate reaction timing, RGB LED stimulus output, piezo audio feedback, and LCD 1602 display output — with a 3.5" ILI9488 TFT upgrade planned for Phase 2.
 
 ---
 
@@ -26,7 +26,7 @@
 
 ## Overview
 
-`rtos-hrt-firmware` measures human reaction time with microsecond precision using a real-time multi-task architecture built on FreeRTOS. A randomized stimulus interval — modulated by a potentiometer — fires an RGB LED; the player responds with a button press captured via hardware interrupt on the STM32F411's NVIC. Four isolated FreeRTOS tasks handle stimulus generation, input capture, scoring logic, and display output, communicating exclusively through queues and binary semaphores.
+`rtos-hrt-firmware` measures human reaction time with microsecond precision using a real-time multi-task architecture built on FreeRTOS. A randomized stimulus interval fires an RGB LED; the player responds with a button press. Three isolated FreeRTOS tasks handle input capture, game control (stimulus generation, scoring, and state management), and display output, communicating exclusively through queues.
 
 The STM32F411 Black Pill runs at 100MHz with 128KB RAM and 512KB Flash — representative of the class of ARM Cortex-M4 microcontrollers used in professional embedded systems development.
 
@@ -39,7 +39,7 @@ This is the second project in the [Baremetal Labs](https://github.com/gmahfood) 
 ### Microcontroller specifications
 
 | Parameter | Value |
-|-----------|-------|
+| --------- | ----- |
 | MCU | STM32F411CEU6 |
 | Core | ARM Cortex-M4 with FPU |
 | Clock | 100MHz |
@@ -52,77 +52,71 @@ This is the second project in the [Baremetal Labs](https://github.com/gmahfood) 
 ### Bill of materials
 
 | Ref | Component | Value / Part | Phase | Source |
-|-----|-----------|--------------|-------|--------|
+| --- | --------- | ------------ | ----- | ------ |
 | U1 | Microcontroller | STM32F411 Black Pill | 1 | Amazon |
 | PROG1 | Programmer / debugger | HiLetgo ST-Link V2 | 1 | Amazon |
 | LCD1 | LCD display | 1602 I2C (0x27) | 1 prototype | SunFounder Inventor Kit |
 | DSP1 | TFT display | 3.5" ILI9488 480x320 SPI | 2 upgrade | Amazon |
 | LED1 | RGB LED | Common cathode | 1 | SunFounder Inventor Kit |
 | BZ1 | Piezo buzzer | Passive 3.3V | 1 | SunFounder Inventor Kit |
-| SW1 | Push button | React — EXTI line | 1 | SunFounder Inventor Kit |
-| SW2 | Push button | Start | 1 | SunFounder Inventor Kit |
-| SW3 | Push button | Reset | 1 | SunFounder Inventor Kit |
-| RV1 | Potentiometer | 10kΩ | 1 | SunFounder Inventor Kit |
-| R1–R3 | Current limiting resistors | 220Ω | 1 | SunFounder Inventor Kit |
-| J1 | DC barrel jack | 5.5/2.1mm | 3 PCB | — |
-| U2 | Voltage regulator | AMS1117-3.3 (SOT-223) | 3 PCB | — |
-| D1 | Schottky diode | SS14 | 3 PCB | — |
-| C1 | Electrolytic cap | 100µF / 25V | 3 PCB | — |
-| C2–C4 | Ceramic bypass cap | 100nF | 3 PCB | — |
+| SW1 | Push button | React button | 1 | SunFounder Inventor Kit |
+| SW2 | Push button | Start button | 1 | SunFounder Inventor Kit |
+| RV1 | Potentiometer | 10k ohm | 1 | SunFounder Inventor Kit |
+| R1-R3 | Current limiting resistors | 220 ohm | 1 | SunFounder Inventor Kit |
+| J1 | DC barrel jack | 5.5/2.1mm | 3 PCB | TBD |
+| U2 | Voltage regulator | AMS1117-3.3 (SOT-223) | 3 PCB | TBD |
+| D1 | Schottky diode | SS14 | 3 PCB | TBD |
+| C1 | Electrolytic cap | 100uF / 25V | 3 PCB | TBD |
+| C2-C4 | Ceramic bypass cap | 100nF | 3 PCB | TBD |
 
 ---
 
 ## FreeRTOS architecture
 
-Four tasks run concurrently under the FreeRTOS scheduler, communicating exclusively through queues and binary semaphores — no direct shared state except the volatile FSM.
-
-![Architecture](assets/architecture.svg)
+Three tasks run concurrently under the FreeRTOS scheduler, communicating exclusively through queues — no direct shared state.
 
 ### Data flow
 
 ```
-vStimulusTask ──[ xReactionQueue ]──► vInputTask
-                                           │
-                                   [ xDisplayQueue ]
-                                      │           │
-                               vScoringTask   vDisplayTask
+[Buttons]
+    |
+    v
+vInputTask ──[ xInputQueue ]──> vGameControllerTask ──[ xDisplayQueue ]──> vDisplayTask
+ (debounce)                      (state machine,                           (LCD 1602 /
+                                  stimulus, scoring)                        ILI9488 TFT)
 ```
 
 ### Task summary
 
 | Task | Priority | Stack | Responsibility |
-|------|----------|-------|----------------|
-| `vStimulusTask` | 2 | 256 words | Random delay, RGB LED stimulus, post timestamp to queue |
-| `vInputTask` | 3 | 256 words | EXTI semaphore, debounce, capture response timestamp |
-| `vScoringTask` | 2 | 256 words | Compute reaction delta, RAM high score, buzzer tones |
-| `vDisplayTask` | 1 | 512 words | Drive LCD 1602 / ILI9488 TFT from display queue |
+| ---- | -------- | ----- | -------------- |
+| `vInputTask` | 3 (highest) | 256 words | Debounce buttons, send press events to input queue |
+| `vGameControllerTask` | 2 | 256 words | Game state machine, random stimulus delay, reaction scoring, buzzer feedback |
+| `vDisplayTask` | 1 (lowest) | 512 words | Render game state to LCD 1602 (Phase 1) or ILI9488 TFT (Phase 2) |
 
 ### Inter-task communication
 
-| Primitive | Type | Between | Purpose |
-|-----------|------|---------|---------|
-| `xReactionQueue` | Queue | Stimulus → Input | Carries stimulus timestamp |
-| `xDisplayQueue` | Queue | Input → Scoring / Display | Carries completed `ReactionEvent_t` |
-| `xButtonSemaphore` | Binary semaphore | EXTI ISR → Input task | Signals button press with zero latency |
-| `gGameState` | Volatile enum | All tasks | Shared FSM state (`IDLE`, `WAITING`, `STIMULUS`, `RESULT`, `EARLY`, `HIGHSCORE`) |
+| Primitive | Type | From | To | Purpose |
+| --------- | ---- | ---- | -- | ------- |
+| `xInputQueue` | Queue | Input | Game Controller | Carries button press events with timestamps |
+| `xDisplayQueue` | Queue | Game Controller | Display | Carries game state updates for rendering |
 
 ---
 
 ## Pin configuration
 
 | Pin | Direction | Function |
-|-----|-----------|----------|
-| PB0 | Input (EXTI0) | React button — hardware interrupt |
-| PA1 | Input | Start button (polled) |
-| PA2 | Input | Reset button (polled) |
+| --- | --------- | -------- |
+| PB0 | Input | React button (polled with debounce) |
+| PB1 | Input | Start button (polled with debounce) |
 | PB4 | Output (PWM TIM3) | RGB LED — red |
 | PB5 | Output (PWM TIM3) | RGB LED — green |
-| PB6 | Output (PWM TIM4) | RGB LED — blue |
+| PA8 | Output (PWM TIM1) | RGB LED — blue |
 | PB8 | Output | Piezo buzzer |
-| PA4 | Output | SPI1 CS — TFT |
-| PA5 | Output | SPI1 SCK |
-| PA6 | Input | SPI1 MISO |
-| PA7 | Output | SPI1 MOSI |
+| PA4 | Output | SPI1 CS — TFT (Phase 2) |
+| PA5 | Output | SPI1 SCK (Phase 2) |
+| PA6 | Input | SPI1 MISO (Phase 2) |
+| PA7 | Output | SPI1 MOSI (Phase 2) |
 | PB7 | I2C SDA | LCD 1602 (I2C1) |
 | PB6 | I2C SCL | LCD 1602 (I2C1) |
 | PA0 | Input (ADC) | Potentiometer — difficulty scaling |
@@ -177,7 +171,7 @@ Custom 2-layer integration PCB designed in EasyEDA and fabricated by [PCBWay](ht
 ### Board specifications
 
 | Parameter | Value |
-|-----------|-------|
+| --------- | ----- |
 | Layers | 2 |
 | Dimensions | TBD |
 | Thickness | 1.6mm |
@@ -194,7 +188,7 @@ Custom 2-layer integration PCB designed in EasyEDA and fabricated by [PCBWay](ht
 Parametric enclosure designed in OpenSCAD / CadQuery and printed on Bambu Labs P2S. Features PCB standoffs, button cutouts, LED diffuser window, and TFT display bezel.
 
 | Parameter | Value |
-|-----------|-------|
+| --------- | ----- |
 | Printer | Bambu Labs P2S |
 | Material | PETG |
 | Design tool | OpenSCAD / CadQuery |
@@ -209,21 +203,19 @@ Parametric enclosure designed in OpenSCAD / CadQuery and printed on Bambu Labs P
 - [x] PlatformIO project configured for STM32F411
 - [x] `pin_config.h` — STM32 GPIO assignments and timing constants
 - [x] `shared_types.h` — FreeRTOS handles, FSM states, event struct
-- [x] `main.cpp` — scheduler init, NVIC ISR, task creation
-- [x] `task_stimulus.cpp` — random delay, LED fire, queue post
-- [x] `task_input.cpp` — EXTI semaphore, debounce, timestamp capture
-- [x] `task_scoring.cpp` — RAM high score, buzzer tones
-- [x] ST-Link wired and board flashing confirmed
+- [ ] `task_input.cpp` — button debounce, event queue posting
+- [ ] `task_game_controller.cpp` — state machine, stimulus, scoring, buzzer
+- [ ] `main.cpp` — scheduler init, task creation, queue setup
 - [ ] `task_display.cpp` — LCD 1602 state rendering
+- [ ] ST-Link wired and board flashing confirmed
 - [ ] Breadboard wiring complete
 - [ ] Serial monitor output verified
 - [ ] Reaction timing accuracy validated
 
 ### Phase 2 — FreeRTOS refinement + TFT display upgrade
 
-- [ ] Queue / semaphore communication verified end-to-end
+- [ ] Queue communication verified end-to-end
 - [ ] False start detection tested
-- [ ] Flash persistence confirmed across power cycles
 - [ ] Potentiometer difficulty scaling tuned
 - [ ] Buzzer sequences finalized
 - [ ] Full integration test — all tasks running concurrently
