@@ -135,6 +135,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 #define DELAY_MIN_MS    500
 #define DELAY_MAX_MS    3000
-#define DEBOUNCE_MS     50
+#define DEBOUNCE_MS     20
 #define DISPLAY_HOLD_MS 2000
 #define ADC_MAX         4095
