@@ -91,10 +91,19 @@ void vGameControllerTask(void *pvParameters) {
 
             // ─────────────────────────────────────────────────────────────
             // IDLE — waiting for the player to press START
+            //
+            // Block on xInputQueue until a start event arrives. The
+            // 100ms timeout lets the loop cycle so the LED stays off
+            // and the task remains responsive. We ignore react events
+            // during idle — only START matters here.
             // ─────────────────────────────────────────────────────────────
             case STATE_IDLE:
                 setLED(0, 0, 0);
-                vTaskDelay(pdMS_TO_TICKS(50));
+                if (xQueueReceive(xInputQueue, &btnEvt, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    if (btnEvt.event == BUTTON_EVENT_START) {
+                        gGameState = STATE_WAITING;
+                    }
+                }
                 break;
 
             // ─────────────────────────────────────────────────────────────
