@@ -34,6 +34,8 @@ The STM32F411 Black Pill runs at 100MHz with 128KB RAM and 512KB Flash — repre
 
 This is the second project in the [Baremetal Labs](https://github.com/gmahfood) embedded systems portfolio, following [`dht11-fsm-dashboard`](https://github.com/gmahfood/dht11-fsm-dashboard).
 
+![Breadboard prototype](assets/breadboard_prototype.png)
+
 ---
 
 ## Hardware
